@@ -1,5 +1,7 @@
 #!/usr/bin/perl
 
+# edited Oct 29, 2012
+
 use strict;
 use warnings;
 
@@ -24,7 +26,7 @@ our $verbose=0;
 
 # Look for backup-portable-drives.conf
 # in these dirs. Use the first one found
-my @config_dirs = qw($settings_dir /usr/local/etc /etc);
+my @config_dirs = ($settings_dir, "/usr/local/etc", "/etc");
 my $config_name="backup-portable-drives.conf";
 
 # load config
@@ -44,7 +46,10 @@ unless ( $config_return = do $config ) {
     # die "other error"; # not needed
 }
 
-debug ("Loaded config $config");
+logit ("Loaded config $config");
+
+# create dirs
+system("mkdir","-p",$last_backup_time_dir, $backup_config_dir);
 
 # sub routines
 
@@ -82,9 +87,12 @@ sub logit {
     while ( $msg =~ m/.*\n/ ) {
 	chomp $msg;
     }
-    if ( $verbose == 1 ) {
-	print $msg . "\n";
+	if ( $verbose == 1 ) {
+		print $msg . "\n";
     }
+    if ( not -f $log ) {
+		system("touch",$log);
+	}
     open(LOG,">>",$log) || die "Failed to open log file $log: $!\nFailed to write to log: $msg\n";
     my $date = get_date();
     print LOG "$date  $msg\n";
@@ -109,6 +117,7 @@ if ( -f $last_mail_settings ) {
 }
 else {
     my %empty=();
+    system("touch", $last_mail_settings) if ( not -f $last_mail_settings);
     store(\%empty, $last_mail_settings) or 
       error_die "Failed to save initial settings in $last_mail_settings: $!";
     $last_mail_messages=retrieve($last_mail_settings);
@@ -241,7 +250,7 @@ sub device_exists_and_mounted {
 					my @line=<FILE>;
 					chomp @line;
 					if ( $uuid eq $line[0] ) {
-						$mounted[0]=$uuidinfo;
+						$mounted[0]="$mount_dir/$dir";
 					}
 					close(FILE);
 				}
