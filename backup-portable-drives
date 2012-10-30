@@ -417,25 +417,25 @@ sub do_backup {
 	
         # first remove if present
         if ( -d $dir_linking ) {
-	    logit "Removing old linking dir for $d";
-	    removedir($dir_linking,"linking") || return;   
+			logit "Removing old linking dir for $d";
+			removedir($dir_linking,"linking") || return;   
         }
         # now link
-	logit "Creating snapshot for $d";
+		logit "Creating snapshot for $d";
         system("cp","-al",$dir_current,$dir_linking);
         if ( $? >> 8 != 0 ) {
-	    removedir($dir_linking);
-	    error("Failed to make snapshot directory for $d. It has been skipped.");
-	    return; # last time will be set, so this does not happen over and over
+			removedir($dir_linking);
+			error("Failed to make snapshot directory for $d. It has been skipped.");
+			return; # last time will be set, so this does not happen over and over
         }
         # and finally move it
         system("mv", $dir_linking, $dir_snapshot);
-	if ( $? >> 8 != 0 ) {
-	    error("Failed to move snapshot into place: $dir_linking to $dir_snapshot: $!");
-	    # removedir($dir_linking);
-	    # removedir($dir_snapshot);
-	    return;
-	}
+		if ( $? >> 8 != 0 ) {
+			error("Failed to move snapshot into place: $dir_linking to $dir_snapshot: $!");
+			# removedir($dir_linking);
+			# removedir($dir_snapshot);
+			return;
+		}
     }
     
     
@@ -458,19 +458,19 @@ sub do_backup {
     
     my $dir_oldbackup=$backupdir . "/." . $d . "~old-backup~";
     if ( -d $dir_oldbackup ) {
-	logit "Removing old backup for $d from previous run";
-	removedir($dir_oldbackup,"old backup") || return;
+		logit "Removing old backup for $d from previous run";
+		removedir($dir_oldbackup,"old backup") || return;
     }
     logit "Moving files into place";
     system("mv",$dir_current,$dir_oldbackup);
     if ( $? >> 8 != 0 ) {
-	error("Failed to move old backup to put new in its place for $d: $!");
-	return;
+		error("Failed to move old backup to put new in its place for $d: $!");
+		return;
     }
     system("mv",$dir_snapshot,$dir_current);
     if ( $? >> 8 != 0 ) {
-	error("Failed to move new backup into place for $d: $!");
-	return;
+		error("Failed to move new backup into place for $d: $!");
+		return;
     }
     logit "Removing old backup";
     removedir($dir_oldbackup) || return;
