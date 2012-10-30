@@ -4,13 +4,14 @@ use strict;
 use warnings;
 
 use Storable qw(store retrieve);
+use File::Path 'remove_tree';
 
 # default settings - DO NOT CHANGE - edit in config file!
 our $wait_between_backups=12;
 our $free_space = 5000;
 our $wait_to_mail_nobackups=14;
-our $wait='h';
-our $dir="/media";
+our $wait_type='i';
+our $mount_dir="/media";
 our $backupdir="$ENV{HOME}/PortableBackup";
 our $settings_dir="$ENV{HOME}/PortableBackup/zdata";
 our $log="$settings_dir/backup.log";
@@ -34,16 +35,16 @@ foreach (@config_dirs) {
     last if ( -f $config );
 }
 if ( not -f $config ) {
-    log_die "failed to find config $config_name in dirs: @config_dirs";
+    error_die ("failed to find config $config_name in dirs: @config_dirs");
 }
 unless ( $config_return = do $config ) {
-    log_die "couldn't parse $config: $@" if $@;
-    log_die "couldn't do $config: $!" unless defined $config_return;
-    log_die "couldn't run $config" unless $config_return;
+    error_die ("couldn't parse $config: $@") if $@;
+    error_die ("couldn't do $config: $!") unless defined $config_return;
+    error_die ("couldn't run $config") unless $config_return;
     # die "other error"; # not needed
 }
 
-debug "Loaded config $config";
+debug ("Loaded config $config");
 
 # sub routines
 
@@ -214,24 +215,47 @@ sub mail {
 # hal-device can be run by normal users
 sub device_exists_and_mounted {
     my ($name,$uuid)=@_;
-    my @hal=`lshal` || error_die "Failed to run lshal: $!";
-    chomp @hal;
-    my @exists=grep(/volume\.uuid += +\'$uuid\'/i, @hal);
-    if ( $#exists > -1 ) {
-	vlogit("Found device with uuid $uuid");
-	my @mounted = grep(/volume\.mount_point = \'\/media\/$name\'/i, @hal);
+    my @mounted;
+    # hal
+    if ( $wait_type eq 'h' ) {
+		my @hal=`lshal` || error_die "Failed to run lshal: $!";
+		chomp @hal;
+		my @exists=grep(/volume\.uuid += +\'$uuid\'/i, @hal);
+		if ( $#exists > -1 ) {
+			vlogit("Found device with uuid $uuid");
+			@mounted = grep(/volume\.mount_point = \'\/media\/$name\'/i, @hal);
+		}
+	}
+	# inotify
+	elsif ( $wait_type eq 'i' ) {
+		if ( not opendir(DIR, $mount_dir) ) {
+			error "Failed to open $mount_dir, skipping: $!";
+			return "";
+		}
+		my @dirs= grep(!/^\.+/, readdir( DIR ) );
+		closedir(DIR);
+		foreach my $dir (@dirs) {
+			my $uuidinfo="$mount_dir/$dir/.uuid-info";
+			if ( -f $uuidinfo ) {
+				if ( open(FILE, $uuidinfo) ) {
+					my @line=<FILE>;
+					chomp @line;
+					if ( $uuid eq $line[0] ) {
+						$mounted[0]=$uuidinfo;
+					}
+					close(FILE);
+				}
+			}
+		}
+	}
 	if ( $#mounted > -1 ) {
 	    vlogit("Found device mounted named $name");
-	    return 1;
+	    return $mounted[0];
 	}
 	else {
 	    vlogit("No device mounted named $name");
 	}
-    }
-    else {
-	vlogit("No device with id $uuid");
-    }
-    return 0;
+    return "";
 }
 
 
@@ -322,8 +346,23 @@ sub needs_backup {
 # place of the old backup. Thus a separate program like BackupPC can be backing it up 
 # and still get all the files (as long as you are doing snapshots of the filesystem, lvm/btrfs/etc)
 sub do_backup {
-    my $d=shift;
-    logit("Doing backup for $d");
+    my ($d,$mount)=@_;
+    
+        # is it there
+    if ( not -d $mount ) {
+		error("Mount does not exist for $d: $mount");
+		return;
+    }
+    # does it have stuff in it?
+    my @mountlist=`/bin/ls "$mount" 2>/dev/null`;
+    chomp @mountlist;
+    if ( $#mountlist == -1 ) {
+		error("Backup $d has a empty mount dir. Failing backup");
+		return;
+    }
+    
+    logit("Creating snapshot for $d");
+    
     my $dir_current=$backupdir . "/" . $d;
     # snapshot starts with a dot and ends with ~snapshot~
     my $dir_snapshot=$backupdir . "/." . $d . "~snapshot~";
@@ -348,8 +387,8 @@ sub do_backup {
     
     # first verify snapshot dir, if it exists, is not empty
     if ( -d $dir_snapshot ) {
-	if ( not opendir(DIR,$dir) ) {
-	    error "Failed to open snapshot dir $dir: $!";
+	if ( not opendir(DIR,$dir_snapshot) ) {
+	    error "Failed to open snapshot dir $dir_snapshot: $!";
 	    return;
         }
         my @list = grep ( !/^\.\.*$/ , readdir(DIR));
@@ -393,47 +432,17 @@ sub do_backup {
     
     # now do the backup
     
-    # get the mount (hal may put it elsewhere if last session was a crash and dir still exists)
-    my @mounts=`lshal | grep mount_point | grep -i /media/$d | awk '{print \$3}' | sed "s/'//g"`;
-    chomp @mounts;
-    if ( $#mounts != 0 or "$mounts[0]" eq "" ) { # we got too many or too much
-	error("Failed to get mount point for $d");
-	return;
-    }
-    my $mount=$mounts[0];
-    # is it there
-    if ( not -d $mount ) {
-	error("Mount does not exist for $d: $mount");
-	return;
-    }
-    # does it have stuff in it?
-    my @mountlist=`sudo /bin/ls "$mount" 2>/dev/null`;
-    chomp @mountlist;
-    if ( $#mountlist == -1 ) {
-	error("Backup $d has a empty mount dir. Failing backup");
-	return;
-    }
-    
     logit "Doing $d backup of $mount";
     # TODO: capture stdout/err and include in mail
     system("nice","-n","10",
-	   "sudo",
-           "/usr/bin/rsync","-aqSH","--no-owner","--no-group","--no-perms",
+       "/usr/bin/rsync","-aqSH","--no-owner","--no-group","--no-perms",
 	   "--chmod=Du=rwX,Dg=rX,Fu=rw,Fg=r,o-rwx","--delete",
 	   "--exclude-from=$backup_config_dir/$d.conf","--delete-excluded",
 	   "$mount/","$dir_snapshot/");
     if ( $? >> 8 != 0 ) {
-	error("Backup of $d ($mount) failed: $!");
-	# do not remove any dirs. we will try again later.
-	return;
-    }
-    else {
-	# change perms
-	system("sudo chown backup:backup -R $dir_snapshot/");
-	if ($? >> 8 != 0 ) {
-	    error("Failed to change perms to backup.");
-	    return;
-	}
+		error("Backup of $d ($mount) failed: $!");
+		# do not remove any dirs. we will try again later.
+		return;
     }
     
     # move it into place
@@ -463,15 +472,26 @@ sub do_backup {
 sub removedir {
     my ($dir,$reason) = @_;
     if ( "$dir" eq "" or "$dir" eq "/" ) {
-	vlogit("removedir got a empty or invalid dir");
-	return 1;
+		vlogit("removedir got a empty or invalid dir");
+		return 1;
     }
-    system("rm","-drf",$dir);
-    if ( $? >> 8 != 0 ) {
-	error("Failed to remove $reason dir $dir: $!");
-        return 1;
-    }
-    return 0;
+    if ( not -d $dir ) {
+		vlogit "removedir: dir did not exist, skipping";
+		return 0;
+	}
+	if ( remove_tree($dir) ) {
+		 return 0;
+	}
+	else {
+		error("Failed to remove $reason dir $dir: $!");
+		return 1;
+	}
+	#system("rm","-rf",$dir);
+    #if ( $? >> 8 != 0 ) {
+	#error("Failed to remove $reason dir $dir: $!");
+    #    return 1;
+    #}
+    #return 0;
 }
 
 sub dirempty {
@@ -536,15 +556,17 @@ while (1) {
 	
 	vlogit "Looking for device $device, id: $devices{$device}";
 	
-	if ( device_exists_and_mounted($device,$devices{$device}) ) {
+	my $mount_point=device_exists_and_mounted($device,$devices{$device});
+	
+	if ($mount_point ne "" ) {
 	    
-            # check if it needs to backup
+        # check if it needs to backup
 	    if ( not needs_backup($device) ) {
-		next;
+			next;
 	    }
             
-            # start the backup
-	    do_backup($device);
+        # start the backup
+	    do_backup($device, $mount_point);
 	    
 	    # save timestamp. we do this even on fail because do_backup will email on failures
 	    # and we dont want rapid backups going
@@ -553,31 +575,51 @@ while (1) {
 	}
     }
     
-    # sleep 2; # just in case inotifywait goes wierd, cpu wont hit the roof
-    
     # we dont need to know what changed, we just want to know the instant new mounts show up
     logit("Watching for new mounts");
-    # /etc/mtab gets moved, so allow for errors
-    my $timeout = 3;
-    my $ino_exit=1;
-    while ( $timeout > 0 and ( $ino_exit != 0 and $ino_exit != 2 ) ) {
-	system("inotifywait -qq -t 3600 -e modify -e delete_self -e move -e ignored /etc/mtab >/dev/null 2>&1");
-	$ino_exit=$? >> 8;
-	$timeout--;
-	sleep 1;
-    }
-    # did it exit due to event/timeout, or was there an error?
-    if ( $ino_exit != 0 and $ino_exit != 2 ) {
-	# just have to wait a while
-	if ( $inotify_fail == 0 ) {
-	    logit("inotify failed. Waiting five mins. Will not show this msg again.");
-	    $inotify_fail=1;
+    # different methods
+    # inotify
+    if ( $wait_type eq 'i' ) {
+		# /etc/mtab gets moved, so allow for errors
+		if ( $inotify_fail != 0 ) {
+			# inotify is not working
+			sleep 300;
+		}
+		else {
+			my $timeout = 3;
+			my $ino_exit=1;
+			# we timeout so if we are using mtab and are too fast, it won't err
+			while ( $timeout > 0 and ( $ino_exit != 0 and $ino_exit != 2 ) ) {
+				vlogit "Watching $mount_dir";
+				system("inotifywait -qq -t 3600 \"$mount_dir\" >/dev/null 2>&1");
+				$ino_exit=$? >> 8;
+				$timeout--;
+				sleep 1;
+			}
+			# did it exit due to event/timeout, or was there an error?
+			if ( $ino_exit != 0 and $ino_exit != 2 ) {
+				# just have to wait a while
+				if ( $inotify_fail == 0 ) {
+					logit("inotify failed. Waiting five mins. Will not show this msg again.");
+					$inotify_fail=1;
+				}
+				sleep 300;
+			}
+		}
 	}
-	sleep 300;
-    }
-    
+	elsif ( $wait_type eq 'h' ) {
+		error_die "hal watch not yet implimented. exiting.";
+	}
+    elsif ( $wait_type eq 'd' ) {
+		error_die "udisks watch not yet implimented. exiting.";
+	}
+	else {
+		error_die "What are you doing? I am a dumb program and cannot read your mind. Specify \$wait_type";
+	}
+	
     # wait a moment before going to top. We want mount to be fully ready.
-    sleep 2;
+    # this saves us from cpu going crazy
+    sleep 3;
     
 
 }
