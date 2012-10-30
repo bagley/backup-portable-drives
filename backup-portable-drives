@@ -561,29 +561,39 @@ while (1) {
     my %devices=get_backup_devices();
     
     # Are any present? If so do backup
-    foreach my $device (keys %devices) {
+    my $did_a_backup=1;
+    while ( $did_a_backup == 1 ) {
 	
-	vlogit "Looking for device $device, id: $devices{$device}";
+	$did_a_backup=0;
 	
-	my $mount_point=device_exists_and_mounted($device,$devices{$device});
-	
-	if ($mount_point ne "" ) {
+	foreach my $device (keys %devices) {
+		
+		vlogit "Looking for device $device, id: $devices{$device}";
+		
+		my $mount_point=device_exists_and_mounted($device,$devices{$device});
+		
+		if ($mount_point ne "" ) {
 	    
-        # check if it needs to backup
-	    if ( not needs_backup($device) ) {
-			next;
-	    }
+			# check if it needs to backup
+			if ( not needs_backup($device) ) {
+				next;
+			}
             
-        # start the backup
-	    do_backup($device, $mount_point);
+			# start the backup
+			do_backup($device, $mount_point);
 	    
-	    # save timestamp. we do this even on fail because do_backup will email on failures
-	    # and we dont want rapid backups going
-	    save_last_backup_time($device);
+			# save timestamp. we do this even on fail because do_backup will email on failures
+			# and we dont want rapid backups going
+			save_last_backup_time($device);
+			
+			# start again, in case another device has been plugged in
+			$did_a_backup=1;
 	
-	}
+		}
     }
     
+	}
+	
     # we dont need to know what changed, we just want to know the instant new mounts show up
     logit("Watching for new mounts");
     # different methods
