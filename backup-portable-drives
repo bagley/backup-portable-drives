@@ -480,8 +480,8 @@ sub do_backup {
 
 sub removedir {
     my ($dir,$reason) = @_;
-    if ( "$dir" eq "" or "$dir" eq "/" ) {
-		vlogit("removedir got a empty or invalid dir");
+    if ( "$dir" eq "" or "$dir" eq "/" or not $dir =~ /PortableBackup/ ) {
+		error("removedir got a empty or invalid dir $dir for reason $reason");
 		return 1;
     }
     if ( not -d $dir ) {
