@@ -454,6 +454,9 @@ sub do_backup {
 		return;
     }
     
+    # tag it with a timestamp
+    system("touch \"$dir_snapshot/z-\$(date +%F)\"");
+    
     # move it into place
     
     my $dir_oldbackup=$backupdir . "/." . $d . "~old-backup~";
