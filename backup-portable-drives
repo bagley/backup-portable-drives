@@ -1,0 +1,583 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use Storable qw(store retrieve);
+
+# default settings - DO NOT CHANGE - edit in config file!
+our $wait_between_backups=12;
+our $free_space = 5000;
+our $wait_to_mail_nobackups=14;
+our $wait='h';
+our $dir="/media";
+our $backupdir="$ENV{HOME}/PortableBackup";
+our $settings_dir="$ENV{HOME}/PortableBackup/zdata";
+our $log="$settings_dir/backup.log";
+our $last_backup_time_dir="$settings_dir/cache";
+our $backup_config_dir="$settings_dir/settings";
+our $mail="mail -s \"%s\" root";
+our $verbose=0;
+
+# import settings
+
+# Look for backup-portable-drives.conf
+# in these dirs. Use the first one found
+my @config_dirs = qw($settings_dir /usr/local/etc /etc);
+my $config_name="backup-portable-drives.conf";
+
+# load config
+my $config_return;
+my $config = "";
+foreach (@config_dirs) {
+    $config = $_."/$config_name";
+    last if ( -f $config );
+}
+if ( not -f $config ) {
+    log_die "failed to find config $config_name in dirs: @config_dirs";
+}
+unless ( $config_return = do $config ) {
+    log_die "couldn't parse $config: $@" if $@;
+    log_die "couldn't do $config: $!" unless defined $config_return;
+    log_die "couldn't run $config" unless $config_return;
+    # die "other error"; # not needed
+}
+
+debug "Loaded config $config";
+
+# sub routines
+
+sub get_date {
+    my $d = `date`;
+    chomp $d;
+    return $d;
+}
+    
+
+sub error {
+    my $msg = shift;
+    my $date=get_date();
+    # remove trailing returns
+    while ( $msg =~ m/.*\n/ ) {
+	chomp $msg;
+    }
+    print STDERR "Error: $msg\n";
+    logit("ERROR: $msg");
+    mail("BPD error", 
+	 "$msg\n\n",
+	 "The above error happened at $date\n");
+}
+
+sub error_die {
+    my $msg = shift;
+    error($msg);
+    logit("Exiting due to previous error");
+    exit 1;
+}
+
+sub logit {
+    my $msg = shift;
+    # remove trailing returns
+    while ( $msg =~ m/.*\n/ ) {
+	chomp $msg;
+    }
+    if ( $verbose == 1 ) {
+	print $msg . "\n";
+    }
+    open(LOG,">>",$log) || die "Failed to open log file $log: $!\nFailed to write to log: $msg\n";
+    my $date = get_date();
+    print LOG "$date  $msg\n";
+    close(LOG);
+}
+
+sub vlogit {
+    if ( $verbose == 1 ) {
+	my $msg = shift;
+	logit ($msg);
+    }
+}
+
+
+# setup mail
+our $last_mail_messages;
+our $last_mail_settings="$last_backup_time_dir/last_mail_times";
+if ( -f $last_mail_settings ) {
+    $last_mail_messages=retrieve($last_mail_settings);
+    error_die "Unable to retrieve settings from $last_mail_settings: $!"
+       unless defined $last_mail_settings;
+}
+else {
+    my %empty=();
+    store(\%empty, $last_mail_settings) or 
+      error_die "Failed to save initial settings in $last_mail_settings: $!";
+    $last_mail_messages=retrieve($last_mail_settings);
+    error_die "Unable to retrieve settings from $last_mail_settings: $!"
+       unless defined $last_mail_settings;
+}
+
+
+# send mail here
+# takes an array, with the first line being the subject
+# just use it like this:
+# mail($subject,@body);
+# Message should already be formatted (\n)
+sub mail {
+    my $s = shift;
+    my $msg = shift;
+    my @b = @_;
+    # check if we have sent mail concernig this
+    if ( exists($last_mail_messages->{$msg}) ) {
+	# has it been less than 3 days since last email?
+	if ( (time - $last_mail_messages->{$msg}) < (3 * 24 * 3600) ) {
+	    # mail was recently sent
+	    return;
+	}
+    }
+    # save last time for this message
+    $last_mail_messages->{$msg}=time;
+    # save it in the settings file
+    store($last_mail_messages, $last_mail_settings) or 
+      error_die "Failed to save settings in $last_mail_settings: $!";
+    
+    # get and set mail app and subject
+    my $mail_this = $mail;
+    $mail_this =~ s/%s/$s/;
+    # mail it
+    if ( not open(MAIL,"|$mail_this") ) {
+	logit("Failed to run mail program $mail_this. Problem: $!");
+	return;
+    }
+    print MAIL $msg;
+    foreach (@b) {
+	print MAIL $_;
+    }
+    close(MAIL) || logit("Failed to close mail $mail_this: $!");
+    logit("Mail sent because: $msg");
+}
+
+
+# convert all names to Regular names (Minnie) when saving.
+
+# if drive is empty, fail. Should we fail if it is almost empty?
+#  -> does not really matter, just a nice check
+
+# change perms to 640 (rsync can do this)
+
+# open up a file on drive and lock it (do drive cannot be removed)
+# service sshd stop
+# ---- replay with each found device
+#   check for current backup, and wait 30 secs if one is going, <-could check for actual portable_devices backup by name
+#   just in case backup started just before we shutdown ssh
+# (could do a quick find, just to see... no, if user changes a file name during find, it will error)
+# chown backup:backup -R /home/backup/NAME
+# su - backup -c "# rsync -a --no-owner --no-group --chmod=u=rwX-x,g=rX-x,o-rwx --delete --force /media/NAME /home/backup/NAME" <- safer, but a pain
+#  --delete-excluded --max-size=2G
+# if fails, do we try it root, or just mail. Yes, just mail an error.
+# ----
+# service sshd start
+
+# whole files: by the time it figures out it could have copied,
+#              it would have already been done. Except on large
+#              files where only a small change has been done. mmm...
+# --bwlimit? no
+
+# Atomic method                <- link-dest required exact perms and owner, do dont use
+# cp -al /Name .Name~copy~
+# su - bacup -c rsync (normal) /source/  ./Name~copy~
+# if fails (drive was unplugged, powerfailure, etc)
+#   rm -drf ./.Name~copy~ <- do this before rsync (unless we want to just keep it for the next try, ie faster)
+#                            we can just always leave this in any failure, as it would help more than hurt
+#                            as long as cp was actually able to finish
+#                            like: cp -al Name .Name~copying~ ; mv .Name~copying~ .Name~copy~
+# succeeds 0:
+#   mv ./Name ./.Name~delete~
+#   mv ./.Name~copy~ ./Name
+#   rm -drf ./.Name~delete~
+
+# we will not be restoring too often, so perhaps just run all as backup
+# this will simplify things, make it quicker, and I can always do a su - chown
+# to reset perms after restore.
+# pros: no need to stop ssh (with atomic method), no chown on thousands of files, much better security
+# cons: not really one, but stopping ssh keep from having to cp -al, but we may still get a partial update (powerfail)
+#     : if a device was perms protected, we would not be able to rsync it, but we already knew that
+
+# rsync  -avSH --no-owner --no-group --no-perms --chmod=Du=rwX,Dg=rX,Fu=rw,Fg=r,o-rwx /media/Kindle/ /home/backup/Kindle
+
+
+# TODO: make config file setup better to handle multiple devices with same name
+#       should be object orient
+#       config files need to have name id name=string, where string, if specified, is a file in
+#         root dir of device, called 'name' which contains a string 'string' in it.
+#         this allows id even in unlikely case of same name and id.
+
+
+# hal-device can be run by normal users
+sub device_exists_and_mounted {
+    my ($name,$uuid)=@_;
+    my @hal=`lshal` || error_die "Failed to run lshal: $!";
+    chomp @hal;
+    my @exists=grep(/volume\.uuid += +\'$uuid\'/i, @hal);
+    if ( $#exists > -1 ) {
+	vlogit("Found device with uuid $uuid");
+	my @mounted = grep(/volume\.mount_point = \'\/media\/$name\'/i, @hal);
+	if ( $#mounted > -1 ) {
+	    vlogit("Found device mounted named $name");
+	    return 1;
+	}
+	else {
+	    vlogit("No device mounted named $name");
+	}
+    }
+    else {
+	vlogit("No device with id $uuid");
+    }
+    return 0;
+}
+
+
+sub get_backup_devices {
+    opendir(DIR,$backup_config_dir) || error_die("Failed to open $backup_config_dir: $!");
+    my @list = grep( /^\w.*\.conf$/, readdir(DIR));
+    close(DIR);
+    if ($#list == -1) {
+	error_die("No backup configs found in $backup_config_dir");
+    }
+    my %h=();
+    foreach (@list) {
+	my $file = $_;
+	my $name;
+	$_ =~ s/^(\w.*)\.conf$/$name=$1/e;
+	my $namefile="$backup_config_dir/$file";
+	if ( not open(CONF,"$namefile") ) {
+	    error("Failed to open $namefile: $!");
+	    next;
+	}
+	# my @content=reverse(<CONF>);
+	my $id;
+	foreach (reverse(<CONF>) ) {
+	    # print $_ . "\n";
+	    $_ =~ s/^#\s*ID:\s*(.+)$/$id=$1/e;
+	}
+        
+	close(CONF);
+	if ( not defined($id) ) {
+	    error("Failed to get id for $name. Is it in the file, like # ID: 1A34-5B78");
+	    next;
+	}
+	# save it
+	$h{$name}=$id;
+    }
+    return %h;
+}
+	
+# does given device need backup?
+# 1=yes, 0=no
+sub needs_backup {
+    my $d = shift;
+    my $last_file="$last_backup_time_dir/$d";
+    if ( not -f $last_file ) {
+	error("Backup has never been run for $d. No timestamp file.");
+	return 1;
+    }
+    # check last time - failure means dont backup (0)
+    if ( not open(LAST, $last_file) ) {
+	error("Failed to open $last_file: $!");
+	return 0;
+    }
+    my $last_time=<LAST>;
+    chomp $last_time;
+    close(LAST);
+    # check it's a number
+    $last_time = $last_time + 0;
+    my $secs_since_last_backup=time - $last_time;
+    if ( $secs_since_last_backup > ($wait_between_backups * 3600) ) {
+	# time to backup
+	if ( $secs_since_last_backup > ($wait_to_mail_nobackups * 24 * 3600) ) {
+            # mail will only go out once every few days
+	    error("No backups have been done for $d for over $wait_to_mail_nobackups days");
+	}
+        vlogit("Backup for $d has not been run within $wait_between_backups hours");
+	return 1;
+    }
+    else {
+	vlogit("Backup for $d was run less than $wait_between_backups hours ago");
+	return 0;
+    }
+}
+
+# Atomic method                <- link-dest required exact perms and owner, do dont use
+# cp -al /Name .Name~copy~
+# su - bacup -c rsync (normal) /source/  ./Name~copy~
+# if fails (drive was unplugged, powerfailure, etc)
+#   rm -drf ./.Name~copy~ <- do this before rsync (unless we want to just keep it for the next try, ie faster)
+#                            we can just always leave this in any failure, as it would help more than hurt
+#                            as long as cp was actually able to finish
+#                            like: cp -al Name .Name~copying~ ; mv .Name~copying~ .Name~copy~
+# succeeds 0:
+#   mv ./Name ./.Name~delete~
+#   mv ./.Name~copy~ ./Name
+#   rm -drf ./.Name~delete~
+# We do an atomic backup, by first creating a snapshot dir that has the latest backup
+# linked into it, and then rsyncing into the snapshot dir, and finally moving it into the
+# place of the old backup. Thus a separate program like BackupPC can be backing it up 
+# and still get all the files (as long as you are doing snapshots of the filesystem, lvm/btrfs/etc)
+sub do_backup {
+    my $d=shift;
+    logit("Doing backup for $d");
+    my $dir_current=$backupdir . "/" . $d;
+    # snapshot starts with a dot and ends with ~snapshot~
+    my $dir_snapshot=$backupdir . "/." . $d . "~snapshot~";
+    # linking likewise
+    my $dir_linking=$dir_snapshot . "linking~";
+    
+    # first we link the current folder into the snapshot folder, first creating
+    # a directory to link into, and then moving it to the snapshot directory
+    # this allows for the machine to crash between linking, and for us to know
+    # if the linking finished or not
+    if ( not -d $dir_current ) { # create backup dir if not there
+	if ( not mkdir $dir_current ) {
+	    error "Failed to create backup dir $dir_current: $!";
+	    return; # last time will be set
+	}
+	else {
+	    logit "Made dir for $d";
+	}
+    }
+    
+    # start linking
+    
+    # first verify snapshot dir, if it exists, is not empty
+    if ( -d $dir_snapshot ) {
+	if ( not opendir(DIR,$dir) ) {
+	    error "Failed to open snapshot dir $dir: $!";
+	    return;
+        }
+        my @list = grep ( !/^\.\.*$/ , readdir(DIR));
+        close(DIR);
+        if ( $#list == -1 ) {
+	    # empty
+	    remove_dir($dir_snapshot,"snaphot") || return;
+	}
+	else {
+	    logit "Using previously made snapshot for $d";
+	}
+    }
+    
+    # if the snapshot dir exists, just use that. otherwise re-link it.
+    
+    if ( not -d $dir_snapshot ) {
+	
+        # first remove if present
+        if ( -d $dir_linking ) {
+	    logit "Removing old linking dir for $d";
+	    removedir($dir_linking,"linking") || return;   
+        }
+        # now link
+	logit "Creating snapshot for $d";
+        system("cp","-al",$dir_current,$dir_linking);
+        if ( $? >> 8 != 0 ) {
+	    removedir($dir_linking);
+	    error("Failed to make snapshot directory for $d. It has been skipped.");
+	    return; # last time will be set, so this does not happen over and over
+        }
+        # and finally move it
+        system("mv", $dir_linking, $dir_snapshot);
+	if ( $? >> 8 != 0 ) {
+	    error("Failed to move snapshot into place: $dir_linking to $dir_snapshot: $!");
+	    # removedir($dir_linking);
+	    # removedir($dir_snapshot);
+	    return;
+	}
+    }
+    
+    
+    # now do the backup
+    
+    # get the mount (hal may put it elsewhere if last session was a crash and dir still exists)
+    my @mounts=`lshal | grep mount_point | grep -i /media/$d | awk '{print \$3}' | sed "s/'//g"`;
+    chomp @mounts;
+    if ( $#mounts != 0 or "$mounts[0]" eq "" ) { # we got too many or too much
+	error("Failed to get mount point for $d");
+	return;
+    }
+    my $mount=$mounts[0];
+    # is it there
+    if ( not -d $mount ) {
+	error("Mount does not exist for $d: $mount");
+	return;
+    }
+    # does it have stuff in it?
+    my @mountlist=`sudo /bin/ls "$mount" 2>/dev/null`;
+    chomp @mountlist;
+    if ( $#mountlist == -1 ) {
+	error("Backup $d has a empty mount dir. Failing backup");
+	return;
+    }
+    
+    logit "Doing $d backup of $mount";
+    # TODO: capture stdout/err and include in mail
+    system("nice","-n","10",
+	   "sudo",
+           "/usr/bin/rsync","-aqSH","--no-owner","--no-group","--no-perms",
+	   "--chmod=Du=rwX,Dg=rX,Fu=rw,Fg=r,o-rwx","--delete",
+	   "--exclude-from=$backup_config_dir/$d.conf","--delete-excluded",
+	   "$mount/","$dir_snapshot/");
+    if ( $? >> 8 != 0 ) {
+	error("Backup of $d ($mount) failed: $!");
+	# do not remove any dirs. we will try again later.
+	return;
+    }
+    else {
+	# change perms
+	system("sudo chown backup:backup -R $dir_snapshot/");
+	if ($? >> 8 != 0 ) {
+	    error("Failed to change perms to backup.");
+	    return;
+	}
+    }
+    
+    # move it into place
+    
+    my $dir_oldbackup=$backupdir . "/." . $d . "~old-backup~";
+    if ( -d $dir_oldbackup ) {
+	logit "Removing old backup for $d from previous run";
+	removedir($dir_oldbackup,"old backup") || return;
+    }
+    logit "Moving files into place";
+    system("mv",$dir_current,$dir_oldbackup);
+    if ( $? >> 8 != 0 ) {
+	error("Failed to move old backup to put new in its place for $d: $!");
+	return;
+    }
+    system("mv",$dir_snapshot,$dir_current);
+    if ( $? >> 8 != 0 ) {
+	error("Failed to move new backup into place for $d: $!");
+	return;
+    }
+    logit "Removing old backup";
+    removedir($dir_oldbackup) || return;
+    
+    # done
+}
+
+sub removedir {
+    my ($dir,$reason) = @_;
+    if ( "$dir" eq "" or "$dir" eq "/" ) {
+	vlogit("removedir got a empty or invalid dir");
+	return 1;
+    }
+    system("rm","-drf",$dir);
+    if ( $? >> 8 != 0 ) {
+	error("Failed to remove $reason dir $dir: $!");
+        return 1;
+    }
+    return 0;
+}
+
+sub dirempty {
+}
+
+sub save_last_backup_time {
+    my $d=shift;
+    my $last_file="$last_backup_time_dir/$d";
+    # die if error saving, as it will cause rapid backups
+    open(LAST,">",$last_file) || error_die "Failed to save timestamp for $d in $last_file: $!";
+    print LAST time           || error_die "Failed to write timestamp for $d in $last_file: $!";
+    close(LAST);
+    vlogit("Saved last backup time for $d");
+}
+
+
+# check things out
+if ( -e $last_backup_time_dir and not -d $last_backup_time_dir ) {
+    error_die("Cannot write to $last_backup_time_dir. It is not a directory");
+}
+
+# is there a config folder
+if ( not -d $backup_config_dir or not -r $backup_config_dir) {
+    error_die("No backup config dir at $backup_config_dir");
+}
+# does it have files in it?
+my @list=`ls "$backup_config_dir"`;
+if ( $#list == -1 ) {
+    error_die("No backup configs found in $backup_config_dir");
+}
+
+# Set things up
+if ( not -d $last_backup_time_dir ) {
+    mkdir $last_backup_time_dir 
+      || error_die "Failed to create last backup dir $last_backup_time_dir: $!";
+}
+
+
+my $inotify_fail=0;
+while (1) {
+
+# TODO: use perl module instead, as we can still check other things (like mounted drives) while we wait
+# inotifywait is at bottom so we can run once before waiting
+
+# while(<WAIT>) {
+    
+    # only proceed if message has "is_mounted = true", as that is really all we care about
+    # no, we need to keep monitoring mounted drives, and keep backing them up
+    # esp if they are mounted for days...
+    # hal keep on outputing things every while, so we can just keep on checking
+    # (this is really just a hack. hal could overflow this, or could just stop outputing )
+    # if ( not m/is_mounted = true/ ) {
+	# next;
+    # }
+    
+    
+    # get list of devices to backup
+    my %devices=get_backup_devices();
+    
+    # Are any present? If so do backup
+    foreach my $device (keys %devices) {
+	
+	vlogit "Looking for device $device, id: $devices{$device}";
+	
+	if ( device_exists_and_mounted($device,$devices{$device}) ) {
+	    
+            # check if it needs to backup
+	    if ( not needs_backup($device) ) {
+		next;
+	    }
+            
+            # start the backup
+	    do_backup($device);
+	    
+	    # save timestamp. we do this even on fail because do_backup will email on failures
+	    # and we dont want rapid backups going
+	    save_last_backup_time($device);
+	
+	}
+    }
+    
+    # sleep 2; # just in case inotifywait goes wierd, cpu wont hit the roof
+    
+    # we dont need to know what changed, we just want to know the instant new mounts show up
+    logit("Watching for new mounts");
+    # /etc/mtab gets moved, so allow for errors
+    my $timeout = 3;
+    my $ino_exit=1;
+    while ( $timeout > 0 and ( $ino_exit != 0 and $ino_exit != 2 ) ) {
+	system("inotifywait -qq -t 3600 -e modify -e delete_self -e move -e ignored /etc/mtab >/dev/null 2>&1");
+	$ino_exit=$? >> 8;
+	$timeout--;
+	sleep 1;
+    }
+    # did it exit due to event/timeout, or was there an error?
+    if ( $ino_exit != 0 and $ino_exit != 2 ) {
+	# just have to wait a while
+	if ( $inotify_fail == 0 ) {
+	    logit("inotify failed. Waiting five mins. Will not show this msg again.");
+	    $inotify_fail=1;
+	}
+	sleep 300;
+    }
+    
+    # wait a moment before going to top. We want mount to be fully ready.
+    sleep 2;
+    
+
+}

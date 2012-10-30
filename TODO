@@ -1,0 +1,2 @@
+Only backup if there have actually been multiple changes
+- check with rsync -n
