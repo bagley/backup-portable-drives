@@ -1,12 +1,21 @@
 #!/usr/bin/perl
 
-# edited Oct 29, 2012
+# edited Oct 30, 2012
+# version 0.1
+# build 46
 
 use strict;
 use warnings;
 
 use Storable qw(store retrieve);
 use File::Path 'remove_tree';
+
+# check this is the only instance
+use Fcntl qw(:flock);
+unless (flock(DATA, LOCK_EX|LOCK_NB)) {
+    print "$0 is already running. Exiting.\n";
+    exit(1);
+}
 
 # default settings - DO NOT CHANGE - edit in config file!
 our $wait_between_backups=12;
@@ -645,3 +654,5 @@ while (1) {
     
 
 }
+
+__DATA__
