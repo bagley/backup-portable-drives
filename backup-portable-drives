@@ -2,7 +2,7 @@
 
 # edited Oct 30, 2012
 # version 0.1
-# build 46
+# build 47
 
 use strict;
 use warnings;
@@ -93,7 +93,7 @@ sub error_die {
 sub logit {
     my $msg = shift;
     # remove trailing returns
-    while ( $msg =~ m/.*\n/ ) {
+    if ( $msg =~ m/.*\n/ ) {
 	chomp $msg;
     }
 	if ( $verbose == 1 ) {
