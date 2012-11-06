@@ -90,19 +90,35 @@ sub error_die {
 }
 
 our $last_msg="";
+our $repeated=0;
 sub logit {
     my $msg = shift;
     # remove trailing returns
     if ( $msg =~ m/.*\n/ ) {
-	chomp $msg;
+		chomp $msg;
     }
-    if ( $msg == $last_msg ) {
-		return;
-	}
-	$last_msg=$msg;
 	if ( $verbose == 1 ) {
 		print $msg . "\n";
     }
+    if ( defined($last_msg) and $msg eq $last_msg ) {
+		if ( $repeated == 5 ) {
+			$repeated++;
+			$msg .= ": repeating";
+		}
+		elsif ( $repeated == 100 ) {
+			$repeated++;
+			$msg .= ": repeated lots of times, over 100 actually";
+		}
+		else {
+			$repeated++;
+			return;
+		}
+	}
+	else {
+		# no more repeating
+		$repeated=0;
+		$last_msg=$msg;
+	}
     if ( not -f $log ) {
 		system("touch",$log);
 	}
@@ -111,6 +127,7 @@ sub logit {
     print LOG "$date  $msg\n";
     close(LOG);
 }
+
 
 sub vlogit {
     if ( $verbose == 1 ) {
