@@ -68,7 +68,6 @@ sub get_date {
     return $d;
 }
     
-
 sub error {
     my $msg = shift;
     my $date=get_date();
@@ -90,12 +89,17 @@ sub error_die {
     exit 1;
 }
 
+our $last_msg="";
 sub logit {
     my $msg = shift;
     # remove trailing returns
     if ( $msg =~ m/.*\n/ ) {
 	chomp $msg;
     }
+    if ( $msg == $last_msg ) {
+		return;
+	}
+	$last_msg=$msg;
 	if ( $verbose == 1 ) {
 		print $msg . "\n";
     }
@@ -246,6 +250,9 @@ sub device_exists_and_mounted {
 	}
 	# inotify
 	elsif ( $wait_type eq 'i' ) {
+		if ( not -d $mount_dir ) {
+			return "";
+		}
 		if ( not opendir(DIR, $mount_dir) ) {
 			error "Failed to open $mount_dir, skipping: $!";
 			return "";
@@ -613,30 +620,24 @@ while (1) {
     # inotify
     if ( $wait_type eq 'i' ) {
 		# /etc/mtab gets moved, so allow for errors
-		if ( $inotify_fail != 0 ) {
-			# inotify is not working
-			sleep 300;
+		my $timeout = 3;
+		my $ino_exit=1;
+		# we timeout so if we are using mtab and are too fast, it won't err
+		while ( $timeout > 0 and ( $ino_exit != 0 and $ino_exit != 2 ) ) {
+			vlogit "Watching $mount_dir";
+			system("inotifywait -qq -t 3600 \"$mount_dir\" >/dev/null 2>&1");
+			$ino_exit=$? >> 8;
+			$timeout--;
+			sleep 1;
 		}
-		else {
-			my $timeout = 3;
-			my $ino_exit=1;
-			# we timeout so if we are using mtab and are too fast, it won't err
-			while ( $timeout > 0 and ( $ino_exit != 0 and $ino_exit != 2 ) ) {
-				vlogit "Watching $mount_dir";
-				system("inotifywait -qq -t 3600 \"$mount_dir\" >/dev/null 2>&1");
-				$ino_exit=$? >> 8;
-				$timeout--;
-				sleep 1;
+		# did it exit due to event/timeout, or was there an error?
+		if ( $ino_exit != 0 and $ino_exit != 2 ) {
+			# just have to wait a while
+			if ( $inotify_fail == 0 ) {
+				logit("inotify failed. Waiting 5 mins. Will not show this msg again.");
+				$inotify_fail=1;
 			}
-			# did it exit due to event/timeout, or was there an error?
-			if ( $ino_exit != 0 and $ino_exit != 2 ) {
-				# just have to wait a while
-				if ( $inotify_fail == 0 ) {
-					logit("inotify failed. Waiting five mins. Will not show this msg again.");
-					$inotify_fail=1;
-				}
-				sleep 300;
-			}
+			sleep 300;
 		}
 	}
 	elsif ( $wait_type eq 'h' ) {
