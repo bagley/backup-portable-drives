@@ -476,9 +476,7 @@ sub do_backup {
     
     logit "Doing $d backup of $mount";
     # TODO: capture stdout/err and include in mail
-    system("nice","-n","10",
-       "/usr/bin/rsync","-aqSH","--no-owner","--no-group","--no-perms",
-	   "--chmod=Du=rwX,Dg=rX,Fu=rw,Fg=r,o-rwx","--delete",
+    system("/usr/bin/rsync","-aqSH","--delete",
 	   "--exclude-from=$backup_config_dir/$d.conf","--delete-excluded",
 	   "$mount/","$dir_snapshot/");
     if ( $? >> 8 != 0 ) {
@@ -486,6 +484,9 @@ sub do_backup {
 		# do not remove any dirs. we will try again later.
 		return;
     }
+    # "nice","-n","10",
+    # "--no-owner","--no-group","--no-perms",
+	#   "--chmod=Du=rwX,Dg=rX,Fu=rw,Fg=r,o-rwx"
     
     # tag it with a timestamp
     system("touch \"$dir_snapshot/z-\$(date +%F)\"");
