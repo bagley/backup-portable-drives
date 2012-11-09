@@ -165,13 +165,15 @@ else {
 sub mail {
     my $s = shift;
     my $msg = shift;
+    chomp $msg;
     my @b = @_;
     # check if we have sent mail concernig this
     if ( exists($last_mail_messages->{$msg}) ) {
 		# has it been less than $wait_between_emails days since last email?
 		if ( (time - $last_mail_messages->{$msg}) < ($wait_between_emails * 24 * 3600) ) {
 			# mail was recently sent
-			vlogit("Already sent mail at time " . $last_mail_messages->{$msg} . " about: $msg");
+			vlogit("Already sent mail " . sprintf("%.1f", (time - $last_mail_messages->{$msg}) / 3600 / 24).
+			       " days ago about: $msg");
 			return;
 		}
     }
@@ -189,7 +191,7 @@ sub mail {
 		logit("Failed to run mail program $mail_this. Problem: $!");
 		return;
     }
-    print MAIL $msg;
+    print MAIL "$msg\n";
     foreach (@b) {
 		print MAIL $_;
     }
@@ -359,18 +361,20 @@ sub needs_backup {
     $last_time = $last_time + 0;
     my $secs_since_last_backup=time - $last_time;
     if ( $secs_since_last_backup > ($wait_between_backups * 3600) ) {
-		# time to backup
+		vlogit("Backup for $d was run over " . int($secs_since_last_backup / 3600) .
+		       " hours ago, more than the needed $wait_between_backups hours. Backup needed.");
+		# check if it's been too long
 		if ( $secs_since_last_backup > ($wait_to_mail_nobackups * 24 * 3600) ) {
 			# mail will only go out once every few days
 			error("No backups have been done of $d for over " .
 			int( $secs_since_last_backup / 3600 / 24 ) . " days.");
 		}
-		vlogit("Backup for $d has not been run within $wait_between_backups hours");
 		return 1;
     }
     else {
-	vlogit("Backup for $d was run less than $wait_between_backups hours ago");
-	return 0;
+		vlogit("Backup for $d was run only " . int($secs_since_last_backup / 3600) .
+		       " hours ago, less than the needed $wait_between_backups hours. Skipping.");
+		return 0;
     }
 }
 
@@ -609,7 +613,7 @@ while (1) {
 		
 		foreach my $device (keys %devices) {
 			
-			vlogit "Looking for device $device, id: $devices{$device}";
+			vlogit "Looking up device $device, id: $devices{$device}";
 			
 			# check if it needs to backup
 			# we do this here because we want to know if any have gone
