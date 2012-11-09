@@ -617,9 +617,15 @@ while (1) {
 				next;
 			}
             
+			# Notify user of start
+			system("notify-send -a PortableBackup \"Portable Device Backups\" \"Beginning backup of $device\"");
+            
 			# start the backup
 			do_backup($device, $mount_point);
-	    
+			
+			# Notify user of finish
+			system("notify-send -a PortableBackup \"Portable Device Backups\" \"Finished backup of $device\"");
+			
 			# save timestamp. we do this even on fail because do_backup will email on failures
 			# and we dont want rapid backups going
 			save_last_backup_time($device);
