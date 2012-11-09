@@ -21,6 +21,7 @@ unless (flock(DATA, LOCK_EX|LOCK_NB)) {
 our $wait_between_backups=12;
 our $free_space = 5000;
 our $wait_to_mail_nobackups=14;
+our $wait_between_emails=2;
 our $wait_type='i';
 our $mount_dir="/media";
 our $backupdir="$ENV{HOME}/PortableBackup";
@@ -168,7 +169,7 @@ sub mail {
     # check if we have sent mail concernig this
     if ( exists($last_mail_messages->{$msg}) ) {
 	# has it been less than 3 days since last email?
-	if ( (time - $last_mail_messages->{$msg}) < (3 * 24 * 3600) ) {
+	if ( (time - $last_mail_messages->{$msg}) < ($wait_between_emails * 24 * 3600) ) {
 	    # mail was recently sent
 	    return;
 	}
