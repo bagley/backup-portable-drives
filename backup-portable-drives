@@ -168,11 +168,12 @@ sub mail {
     my @b = @_;
     # check if we have sent mail concernig this
     if ( exists($last_mail_messages->{$msg}) ) {
-	# has it been less than 3 days since last email?
-	if ( (time - $last_mail_messages->{$msg}) < ($wait_between_emails * 24 * 3600) ) {
-	    # mail was recently sent
-	    return;
-	}
+		# has it been less than $wait_between_emails days since last email?
+		if ( (time - $last_mail_messages->{$msg}) < ($wait_between_emails * 24 * 3600) ) {
+			# mail was recently sent
+			vlogit("Already sent mail at time " . $last_mail_messages->{$msg} . " about: $msg");
+			return;
+		}
     }
     # save last time for this message
     $last_mail_messages->{$msg}=time;
@@ -358,13 +359,14 @@ sub needs_backup {
     $last_time = $last_time + 0;
     my $secs_since_last_backup=time - $last_time;
     if ( $secs_since_last_backup > ($wait_between_backups * 3600) ) {
-	# time to backup
-	if ( $secs_since_last_backup > ($wait_to_mail_nobackups * 24 * 3600) ) {
-            # mail will only go out once every few days
-	    error("No backups have been done for $d for over $wait_to_mail_nobackups days");
-	}
-        vlogit("Backup for $d has not been run within $wait_between_backups hours");
-	return 1;
+		# time to backup
+		if ( $secs_since_last_backup > ($wait_to_mail_nobackups * 24 * 3600) ) {
+			# mail will only go out once every few days
+			error("No backups have been done of $d for over " .
+			int( $secs_since_last_backup / 3600 / 24 ) . " days.");
+		}
+		vlogit("Backup for $d has not been run within $wait_between_backups hours");
+		return 1;
     }
     else {
 	vlogit("Backup for $d was run less than $wait_between_backups hours ago");
@@ -603,21 +605,26 @@ while (1) {
     my $did_a_backup=1;
     while ( $did_a_backup == 1 ) {
 	
-	$did_a_backup=0;
-	
-	foreach my $device (keys %devices) {
+		$did_a_backup=0;
 		
-		vlogit "Looking for device $device, id: $devices{$device}";
-		
-		my $mount_point=device_exists_and_mounted($device,$devices{$device});
-		
-		if ($mount_point ne "" ) {
-	    
+		foreach my $device (keys %devices) {
+			
+			vlogit "Looking for device $device, id: $devices{$device}";
+			
 			# check if it needs to backup
+			# we do this here because we want to know if any have gone
+			# too long without a backup
 			if ( not needs_backup($device) ) {
 				next;
 			}
-            
+			
+			# is it connected and mounted
+			my $mount_point=device_exists_and_mounted($device,$devices{$device});
+			if ($mount_point eq "" ) {
+				next;
+			}
+			# okay, time to backup
+			
 			# Notify user of start
 			system("notify-send -a PortableBackup \"Portable Device Backups\" \"Beginning backup of $device\"");
             
@@ -633,11 +640,9 @@ while (1) {
 			
 			# start again, in case another device has been plugged in
 			$did_a_backup=1;
-	
+			
 		}
     }
-    
-	}
 	
     # we dont need to know what changed, we just want to know the instant new mounts show up
     logit("Watching for new mounts");
