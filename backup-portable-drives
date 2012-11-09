@@ -659,7 +659,7 @@ while (1) {
 		# we timeout so if we are using mtab and are too fast, it won't err
 		while ( $timeout > 0 and ( $ino_exit != 0 and $ino_exit != 2 ) ) {
 			vlogit "Watching $mount_dir";
-			system("inotifywait -qq -t 3600 \"$mount_dir\" >/dev/null 2>&1");
+			system("inotifywait -qq -t 21600 \"$mount_dir\" >/dev/null 2>&1");
 			$ino_exit=$? >> 8;
 			$timeout--;
 			sleep 1;
