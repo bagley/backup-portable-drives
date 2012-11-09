@@ -186,12 +186,12 @@ sub mail {
     $mail_this =~ s/%s/$s/;
     # mail it
     if ( not open(MAIL,"|$mail_this") ) {
-	logit("Failed to run mail program $mail_this. Problem: $!");
-	return;
+		logit("Failed to run mail program $mail_this. Problem: $!");
+		return;
     }
     print MAIL $msg;
     foreach (@b) {
-	print MAIL $_;
+		print MAIL $_;
     }
     close(MAIL) || logit("Failed to close mail $mail_this: $!");
     logit("Mail sent because: $msg");
@@ -344,13 +344,13 @@ sub needs_backup {
     my $d = shift;
     my $last_file="$last_backup_time_dir/$d";
     if ( not -f $last_file ) {
-	error("Backup has never been run for $d. No timestamp file.");
-	return 1;
+		error("Backup has never been run for $d. No timestamp file.");
+		return 1;
     }
     # check last time - failure means dont backup (0)
     if ( not open(LAST, $last_file) ) {
-	error("Failed to open $last_file: $!");
-	return 0;
+		error("Failed to open $last_file: $!");
+		return 0;
     }
     my $last_time=<LAST>;
     chomp $last_time;
