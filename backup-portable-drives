@@ -17,9 +17,9 @@ unless (flock(DATA, LOCK_EX|LOCK_NB)) {
 }
 
 # default settings - DO NOT CHANGE - edit in config file!
-our $wait_between_backups=12;
+our $wait_between_backups=9;
 our $free_space = 5000;
-our $wait_to_mail_nobackups=14;
+our $wait_to_mail_nobackups=7;
 our $wait_between_emails=2;
 our $wait_type='i';
 our $mount_dir="/media";
