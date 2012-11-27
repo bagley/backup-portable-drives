@@ -1,8 +1,7 @@
 #!/usr/bin/perl
 
-# edited Oct 30, 2012
-# version 0.1
-# build 47
+# edited Nov 27, 2012
+# version 0.1.52
 
 use strict;
 use warnings;
