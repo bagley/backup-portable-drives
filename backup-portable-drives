@@ -415,7 +415,7 @@ sub do_backup {
     
     my $dir_current=$backupdir . "/" . $d;
     # snapshot starts with a dot and ends with ~snapshot~
-    my $dir_snapshot=$backupdir . "/." . $d . "~snapshot~";
+    my $dir_snapshot=$backupdir . "/.snapshot." . $d . ".snapshot~";
     # linking likewise
     my $dir_linking=$dir_snapshot . "linking~";
     
