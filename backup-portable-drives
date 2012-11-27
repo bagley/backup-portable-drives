@@ -24,8 +24,9 @@ our $wait_to_mail_nobackups=14;
 our $wait_between_emails=2;
 our $wait_type='i';
 our $mount_dir="/media";
-our $backupdir="$ENV{HOME}/PortableBackup";
-our $settings_dir="$ENV{HOME}/PortableBackup/zdata";
+our $backupdirname="Portables";
+our $backupdir="$ENV{HOME}/$backupdirname";
+our $settings_dir="$backupdir/zdata";
 our $log="$settings_dir/backup.log";
 our $last_backup_time_dir="$settings_dir/cache";
 our $backup_config_dir="$settings_dir/settings";
@@ -524,8 +525,13 @@ sub do_backup {
 
 sub removedir {
     my ($dir,$reason) = @_;
-    if ( "$dir" eq "" or "$dir" eq "/" or not $dir =~ /PortableBackup/ ) {
-		error("removedir got a empty or invalid dir $dir for reason $reason");
+    # sanity checks and verify we actually have the right looking dir
+    # it's just that this removes dirs, so we want to be careful
+    if (       "$dir" eq "" 
+			or "$dir" eq "/" 
+			or not $dir =~ /$backupdir\// 
+			or not $dir =~ /\/$backupdirname\// ) {
+		error("removedir got a empty or invalid dir <$dir> for reason: $reason");
 		return 1;
     }
     if ( not -d $dir ) {
