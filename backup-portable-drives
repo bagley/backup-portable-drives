@@ -25,13 +25,16 @@ our $wait_type='i';
 our $mount_dir="/media";
 our $backupdirname="Portables";
 our $backupdirhome="$ENV{HOME}";
+our $mail="mail -s \"%s\" root";
+our $verbose=0;
+
+# custom defaults
 our $backupdir="$backupdirhome/$backupdirname";
 our $settings_dir="$backupdir/zdata";
 our $log="$settings_dir/backup.log";
 our $last_backup_time_dir="$settings_dir/cache";
 our $backup_config_dir="$settings_dir/settings";
-our $mail="mail -s \"%s\" root";
-our $verbose=0;
+
 
 # import settings
 
