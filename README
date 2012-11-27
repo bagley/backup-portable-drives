@@ -1,0 +1,5 @@
+A program that will automatically backup your portable devices 
+to a folder in your home directory, which is configurable.
+
+Currently works with inotifywait (inotify tools). 
+Need to implement HAL and udisks.
