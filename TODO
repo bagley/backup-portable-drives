@@ -1,2 +1,8 @@
 Only backup if there have actually been multiple changes
 - check with rsync -n
+- But we could be done by then....unless we have a lot of files to snapshot
+
+Should mails keep coming for each day a backup is overdue,
+or should that also be kept for the mail days.
+If so, would have to restructure how mails are kept.
+Perhaps ignore numbers?
