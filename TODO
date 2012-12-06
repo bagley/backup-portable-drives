@@ -6,3 +6,6 @@ Should mails keep coming for each day a backup is overdue,
 or should that also be kept for the mail days.
 If so, would have to restructure how mails are kept.
 Perhaps ignore numbers?
+
+
+Auto trim log file
