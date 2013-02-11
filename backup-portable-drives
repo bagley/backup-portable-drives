@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
-# edited Nov 27, 2012
-# version 0.1.52
+# edited Feb 11, 2013
+# version 0.1.54
 
 use strict;
 use warnings;
@@ -170,19 +170,26 @@ sub mail {
     my $s = shift;
     my $msg = shift;
     chomp $msg;
+    # get a copy of msg without the numbers, so we can tell the user that
+    # backups have not happened in x number of days, 
+    # but only every $wait_between_emails days
+    my $check_msg=$msg;
+    $check_msg =~ s/\d+//g;
+    print $check_msg . "\n";
+    exit;
     my @b = @_;
     # check if we have sent mail concernig this
-    if ( exists($last_mail_messages->{$msg}) ) {
+    if ( exists($last_mail_messages->{$check_msg}) ) {
 		# has it been less than $wait_between_emails days since last email?
-		if ( (time - $last_mail_messages->{$msg}) < ($wait_between_emails * 24 * 3600) ) {
+		if ( (time - $last_mail_messages->{$check_msg}) < ($wait_between_emails * 24 * 3600) ) {
 			# mail was recently sent
-			vlogit("Already sent mail " . sprintf("%.1f", (time - $last_mail_messages->{$msg}) / 3600 / 24).
+			vlogit("Already sent mail " . sprintf("%.1f", (time - $last_mail_messages->{$check_msg}) / 3600 / 24).
 			       " days ago about: $msg");
 			return;
 		}
     }
     # save last time for this message
-    $last_mail_messages->{$msg}=time;
+    $last_mail_messages->{$check_msg}=time;
     # save it in the settings file
     store($last_mail_messages, $last_mail_settings) or 
       error_die "Failed to save settings in $last_mail_settings: $!";
