@@ -175,8 +175,6 @@ sub mail {
     # but only every $wait_between_emails days
     my $check_msg=$msg;
     $check_msg =~ s/\d+//g;
-    print $check_msg . "\n";
-    exit;
     my @b = @_;
     # check if we have sent mail concernig this
     if ( exists($last_mail_messages->{$check_msg}) ) {
