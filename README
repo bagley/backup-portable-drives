@@ -3,3 +3,52 @@ to a folder in your home directory, which is configurable.
 
 Currently works with inotifywait (inotify tools). 
 Need to implement HAL and udisks.
+
+
+Currently there aren't very many instructions. So here goes.
+
+-----------------------------
+
+To install:
+
+("BackupFolder" is whereever you want to place your backups)
+
+Make the following folders:
+BackupFolder/zdata/bin
+BackupFolder/zdata/cache
+BackupFolder/zdata/settings
+
+
+Install backup-portable-drives to:
+BackupFolder/zdata/bin/backup-portable-drives
+
+and backup-portable-drives.conf to:
+BackupFolder/zdata/backup-portable-drives.conf
+
+Place your backup config (from example.conf) in
+BackupFolder/zdata/settings
+
+Run the program at (at computer startup):
+BackupFolder/zdata/bin/backup-portable-drives
+
+Backup will show up in
+BackupFolder/<backup name>
+
+
+
+--------------------------------
+
+To configure:
+
+Each backup config file start with:
+
+# Drive id (program uses this to find and verify same drive)
+# ID: 2345-4321
+
+The "2345-4321" is your drive serial, though for now it just looks 
+for a file called ".uuid-info" at the root of the portable drive
+and sees if it contains that number.
+
+
+
+
